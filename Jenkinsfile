@@ -14,6 +14,26 @@ pipeline {
             }
         }
 
+        stage('Start MySQL for Tests') {
+            steps {
+                script {
+                    // Stop old MySQL container if exists
+                    sh 'docker rm -f mysql-test || true'
+
+                    // Run fresh MySQL container
+                    sh '''
+                        docker run -d --name mysql-test \
+                          -e MYSQL_ROOT_PASSWORD=root \
+                          -e MYSQL_DATABASE=studentdb \
+                          -p 3306:3306 \
+                          mysql:8.0 --default-authentication-plugin=mysql_native_password
+                    '''
+                    // wait for DB to boot
+                    sh 'sleep 25'
+                }
+            }
+        }
+
         stage('Build') {
             steps {
                 sh 'mvn clean compile'
