@@ -46,7 +46,7 @@ pipeline {
             }
             post {
                 always {
-                    publishTestResults testResultsPattern: 'target/surefire-reports/*.xml'
+                    junit 'target/surefire-reports/*.xml'
                 }
             }
         }
