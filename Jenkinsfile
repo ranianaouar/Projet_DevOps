@@ -53,8 +53,6 @@ pipeline {
             }
         }
 
-        // CHOISISSEZ UNE SEULE METHODE POUR SONARQUBE :
-
         // === OPTION 1 : Avec Sonar Scanner (Recommandé) ===
         stage('SonarQube Analysis') {
             steps {
@@ -70,19 +68,6 @@ pipeline {
                 }
             }
         }
-
-        /*
-        // === OPTION 2 : Avec Maven (Décommentez cette option et commentez l'autre) ===
-        stage('SonarQube Analysis') {
-            steps {
-                withSonarQubeEnv('sonar1') {
-                    sh 'mvn sonar:sonar \
-                        -Dsonar.projectKey=student-management \
-                        -Dsonar.projectName=Student Management System'
-                }
-            }
-        }
-        */
 
         stage('Package') {
             steps {
@@ -117,11 +102,10 @@ pipeline {
             echo '❌ Pipeline a échoué!'
         }
         // Vérification de la Quality Gate SonarQube
-        always {
+        fixed {
             script {
                 // Ne vérifie la Quality Gate que si l'analyse SonarQube a été faite
-                if ((currentBuild.result == 'SUCCESS' || currentBuild.result == 'UNSTABLE') &&
-                    env.SONAR_HOST_URL) {
+                if (env.SONAR_HOST_URL) {
                     waitForQualityGate abortPipeline: false
                 }
             }
