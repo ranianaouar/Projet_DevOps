@@ -53,33 +53,36 @@ pipeline {
             }
         }
 
-        // NOUVEAU STAGE : Analyse SonarQube
+        // CHOISISSEZ UNE SEULE METHODE POUR SONARQUBE :
+
+        // === OPTION 1 : Avec Sonar Scanner (Recommandé) ===
         stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv('SonarQube') {
-                    sh '''
+                withSonarQubeEnv('sonar1') {  // Utilisez le nom exact de votre serveur configuré
+                    sh """
                         ${SCANNER_HOME}/bin/sonar-scanner \
                           -Dsonar.projectKey=student-management \
                           -Dsonar.projectName=Student Management System \
                           -Dsonar.java.binaries=target/classes \
-                          -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml \
                           -Dsonar.sources=src \
                           -Dsonar.host.url=http://localhost:9000
-                    '''
+                    """
                 }
             }
         }
 
-        // Alternative : Si vous préférez utiliser Maven au lieu du scanner
-        stage('SonarQube Analysis (Maven)') {
+        /*
+        // === OPTION 2 : Avec Maven (Décommentez cette option et commentez l'autre) ===
+        stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv('SonarQube') {
+                withSonarQubeEnv('sonar1') {
                     sh 'mvn sonar:sonar \
                         -Dsonar.projectKey=student-management \
                         -Dsonar.projectName=Student Management System'
                 }
             }
         }
+        */
 
         stage('Package') {
             steps {
@@ -101,10 +104,11 @@ pipeline {
         }
     }
 
-    // NOUVEAU : Quality Gate Check
     post {
         always {
             echo '✅ Pipeline terminé'
+            // Nettoyage du conteneur MySQL
+            sh 'docker rm -f mysql-test || true'
         }
         success {
             echo '🎉 Pipeline exécuté avec succès!'
@@ -115,7 +119,9 @@ pipeline {
         // Vérification de la Quality Gate SonarQube
         always {
             script {
-                if (currentBuild.result == 'SUCCESS' || currentBuild.result == 'UNSTABLE') {
+                // Ne vérifie la Quality Gate que si l'analyse SonarQube a été faite
+                if ((currentBuild.result == 'SUCCESS' || currentBuild.result == 'UNSTABLE') &&
+                    env.SONAR_HOST_URL) {
                     waitForQualityGate abortPipeline: false
                 }
             }
