@@ -4,7 +4,7 @@ pipeline {
     environment {
         DOCKER_IMAGE = 'rania111/student-management'
         DOCKER_TAG = "${BUILD_NUMBER}"
-        // Configuration SonarQube
+        // Configuration SonarQube - ATTENTION: Vérifiez le nom exact dans Jenkins
         SCANNER_HOME = tool 'SonarQube Scanner'
     }
 
@@ -53,10 +53,14 @@ pipeline {
             }
         }
 
-        // === OPTION 1 : Avec Sonar Scanner (Recommandé) ===
+        // === OPTION 1 : Avec Sonar Scanner ===
         stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv('sonar1') {  // Utilisez le nom exact de votre serveur configuré
+                script {
+                    // Vérification que le scanner est disponible
+                    echo "Scanner path: ${SCANNER_HOME}"
+                }
+                withSonarQubeEnv('sonar1') {
                     sh """
                         ${SCANNER_HOME}/bin/sonar-scanner \
                           -Dsonar.projectKey=student-management \
@@ -87,27 +91,30 @@ pipeline {
                 }
             }
         }
+
+        // Stage de nettoyage explicite
+        stage('Cleanup') {
+            steps {
+                script {
+                    echo '🧹 Nettoyage des ressources...'
+                    sh 'docker rm -f mysql-test || true'
+                }
+            }
+        }
     }
 
     post {
         always {
             echo '✅ Pipeline terminé'
-            // Nettoyage du conteneur MySQL
-            sh 'docker rm -f mysql-test || true'
         }
         success {
             echo '🎉 Pipeline exécuté avec succès!'
         }
         failure {
             echo '❌ Pipeline a échoué!'
-        }
-        // Vérification de la Quality Gate SonarQube
-        fixed {
             script {
-                // Ne vérifie la Quality Gate que si l'analyse SonarQube a été faite
-                if (env.SONAR_HOST_URL) {
-                    waitForQualityGate abortPipeline: false
-                }
+                // Nettoyage en cas d'échec
+                sh 'docker rm -f mysql-test || true'
             }
         }
     }
