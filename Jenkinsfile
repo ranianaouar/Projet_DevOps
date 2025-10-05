@@ -64,7 +64,7 @@ pipeline {
                     sh """
                         ${SCANNER_HOME}/bin/sonar-scanner \
                           -Dsonar.projectKey=student-management \
-                          -Dsonar.projectName=Student Management System \
+                          -Dsonar.projectName=StudentManagementSystem \
                           -Dsonar.java.binaries=target/classes \
                           -Dsonar.sources=src \
                           -Dsonar.host.url=http://localhost:9000
