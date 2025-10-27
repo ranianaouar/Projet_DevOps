@@ -4,8 +4,8 @@ pipeline {
     environment {
         DOCKER_IMAGE = 'rania111/student-management'
         DOCKER_TAG = "${BUILD_NUMBER}"
-        // Configuration SonarQube - ATTENTION: Vérifiez le nom exact dans Jenkins
         SCANNER_HOME = tool 'SonarQube Scanner'
+        K8S_NAMESPACE = 'devops'
     }
 
     stages {
@@ -19,10 +19,7 @@ pipeline {
         stage('Start MySQL for Tests') {
             steps {
                 script {
-                    // Stop old MySQL container if exists
                     sh 'docker rm -f mysql-test || true'
-
-                    // Run fresh MySQL container
                     sh '''
                         docker run -d --name mysql-test \
                           -e MYSQL_ROOT_PASSWORD=root \
@@ -30,7 +27,6 @@ pipeline {
                           -p 3306:3306 \
                           mysql:8.0 --default-authentication-plugin=mysql_native_password
                     '''
-                    // wait for DB to boot
                     sh 'sleep 25'
                 }
             }
@@ -53,13 +49,8 @@ pipeline {
             }
         }
 
-        // === OPTION 1 : Avec Sonar Scanner ===
         stage('SonarQube Analysis') {
             steps {
-                script {
-                    // Vérification que le scanner est disponible
-                    echo "Scanner path: ${SCANNER_HOME}"
-                }
                 withSonarQubeEnv('sonar1') {
                     sh """
                         ${SCANNER_HOME}/bin/sonar-scanner \
@@ -87,16 +78,105 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    def image = docker.build("${DOCKER_IMAGE}:${DOCKER_TAG}")
+                    // Construire l'image
+                    docker.build("${DOCKER_IMAGE}:${DOCKER_TAG}")
                 }
             }
         }
 
-        // Stage de nettoyage explicite
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'dockerhub-credentials',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )]) {
+                        sh """
+                            # Tester la connexion Docker Hub
+                            if docker login -u "$DOCKER_USER" -p "$DOCKER_PASS"; then
+                                echo "✅ Docker Hub login successful"
+
+                                # Tagger l'image
+                                docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:${DOCKER_TAG}
+
+                                # Pousser l'image
+                                if docker push ${DOCKER_IMAGE}:${DOCKER_TAG}; then
+                                    echo "✅ Image pushed successfully to Docker Hub"
+                                else
+                                    echo "❌ Failed to push image"
+                                    exit 1
+                                fi
+                            else
+                                echo "❌ Docker Hub login failed"
+                                exit 1
+                            fi
+                        """
+                    }
+                }
+            }
+        }
+
+        // ========== NOUVELLES ÉTAPES KUBERNETES ==========
+        stage('Deploy to Kubernetes') {
+            steps {
+                script {
+                    // 1. Mettre à jour l'image dans le fichier YAML
+                    sh """
+                        sed -i 's|image:.*|image: ${DOCKER_IMAGE}:${DOCKER_TAG}|' spring-deployment.yaml
+                    """
+
+                    // 2. Déployer MySQL si nécessaire
+                    sh """
+                        if ! kubectl get deployment mysql -n ${K8S_NAMESPACE} &> /dev/null; then
+                            echo "🚀 Déploiement de MySQL..."
+                            kubectl apply -f mysql-deployment.yaml -n ${K8S_NAMESPACE}
+                        else
+                            echo "✅ MySQL est déjà déployé"
+                        fi
+                    """
+
+                    // 3. Déployer l'application Spring Boot
+                    sh """
+                        echo "🚀 Déploiement de l'application Spring Boot..."
+                        kubectl apply -f spring-deployment.yaml -n ${K8S_NAMESPACE}
+                    """
+
+                    // 4. Attendre que les pods soient ready
+                    sh """
+                        echo "⏳ Attente du déploiement..."
+                        kubectl rollout status deployment/spring-app -n ${K8S_NAMESPACE} --timeout=300s
+                    """
+                }
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                script {
+                    // Vérifier l'état du déploiement
+                    sh """
+                        echo "🔍 Vérification du déploiement..."
+                        kubectl get pods -n ${K8S_NAMESPACE}
+                        kubectl get svc -n ${K8S_NAMESPACE}
+                    """
+
+                    // Tester l'application
+                    sh """
+                        echo "🧪 Test de l'application..."
+                        sleep 30  # Attendre que l'application soit complètement démarrée
+                        APP_URL=\$(minikube service spring-service -n ${K8S_NAMESPACE} --url)
+                        echo "📱 URL de l'application: \$APP_URL"
+                        curl -s "\$APP_URL/student/Depatment/getAllDepartment" || echo "L'application n'est pas encore prête"
+                    """
+                }
+            }
+        }
+
         stage('Cleanup') {
             steps {
                 script {
-                    echo '🧹 Nettoyage des ressources...'
+                    echo '🧹 Nettoyage des ressources de test...'
                     sh 'docker rm -f mysql-test || true'
                 }
             }
@@ -106,16 +186,23 @@ pipeline {
     post {
         always {
             echo '✅ Pipeline terminé'
+            script {
+                // Nettoyage des ressources Jenkins
+                sh 'docker rm -f mysql-test || true'
+            }
         }
         success {
             echo '🎉 Pipeline exécuté avec succès!'
+            script {
+                // Afficher l'URL finale
+                sh """
+                    APP_URL=\$(minikube service spring-service -n ${K8S_NAMESPACE} --url)
+                    echo "🌐 Votre application est disponible à: \$APP_URL/student"
+                """
+            }
         }
         failure {
             echo '❌ Pipeline a échoué!'
-            script {
-                // Nettoyage en cas d'échec
-                sh 'docker rm -f mysql-test || true'
-            }
         }
     }
 }
