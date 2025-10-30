@@ -121,6 +121,18 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 script {
+                    // 0. Démarrer Minikube si nécessaire
+                    sh """
+                        if ! kubectl cluster-info &> /dev/null; then
+                            echo "🚀 Starting Minikube..."
+                            minikube start --driver=docker
+                            sleep 30
+                        fi
+
+                        # Utiliser le Docker de Minikube
+                        eval \$(minikube docker-env)
+                    """
+
                     // 1. Mettre à jour l'image dans le fichier YAML
                     sh """
                         sed -i 's|image:.*|image: ${DOCKER_IMAGE}:${DOCKER_TAG}|' spring-deployment.yaml
